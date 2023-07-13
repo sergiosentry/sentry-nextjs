@@ -1,10 +1,12 @@
 const withFonts = require("next-fonts");
 const withBundleAnalyzer = require("@next/bundle-analyzer");
 const withTM = require("next-transpile-modules");
+const { withSentryConfig } = require("@sentry/nextjs");
 
+// configuration enhancers
 const addFonts = (config) => withFonts(config);
 const addBundleAnalyzer = (config) =>
-  withBundleAnalyzer({ enabled: true })(config);
+  withBundleAnalyzer({ enabled: enableAnalyzer })(config);
 const addWatchOptions = (baseConfig) => ({
   ...baseConfig,
   webpackDevMiddleware: (config) => ({
@@ -15,7 +17,9 @@ const addWatchOptions = (baseConfig) => ({
     },
   }),
 });
-const addTM = (config) => withTM([], { resolveSymlinks: false })(config);
+
+const addTM = (config) =>
+  withTM(requiredModules, { resolveSymlinks: false })(config);
 
 const buildNextConfig = (baseConfig, ...configEnhancers) =>
   configEnhancers.reduce(
@@ -23,22 +27,51 @@ const buildNextConfig = (baseConfig, ...configEnhancers) =>
     baseConfig
   );
 
-module.exports = buildNextConfig(
-  {
-    // NOTE: We pass some environment variables but should not affect the issue
-    // env: {},
-    // NOTE: Set an example base path
-    // basePath: siteBasePath,
-    productionBrowserSourceMaps: true,
-    eslint: {
-      ignoreDuringBuilds: true,
+let addMFConfig = (config) => config;
+if (buildWithFederation) {
+  addMFConfig = addModuleFederationForNavigation;
+}
+
+const addRemoteLayoutStub = (nextConfig) => {
+  return {
+    ...nextConfig,
+    webpack(config, options) {
+      if (!federatedByRemote) {
+        config.plugins.push(new UseRemoteLayoutStubPlugin());
+      }
+
+      if (typeof nextConfig.webpack === "function") {
+        return nextConfig.webpack(config, options);
+      }
+
+      return config;
     },
-    typescript: {
-      ignoreBuildErrors: true,
+  };
+};
+
+const addSentryConfigs = (nextConfig) => withSentryConfig(nextConfig);
+
+module.exports = addSentryConfigs(
+  buildNextConfig(
+    {
+      basePath: siteBasePath,
+      sentry: {
+        disableServerWebpackPlugin: true,
+        disableClientWebpackPlugin: true,
+      },
+      productionBrowserSourceMaps: true,
+      eslint: {
+        ignoreDuringBuilds: true,
+      },
+      typescript: {
+        ignoreBuildErrors: true,
+      },
     },
-  },
-  addFonts,
-  addBundleAnalyzer,
-  addWatchOptions,
-  addTM
+    addFonts,
+    addBundleAnalyzer,
+    addWatchOptions,
+    addMFConfig,
+    addRemoteLayoutStub,
+    addTM
+  )
 );
